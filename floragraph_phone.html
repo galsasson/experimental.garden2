@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no" />
   <title>FloraGraph (Three.js mobile)</title>
   <style>
-    html, body { margin:0; padding:0; height:100%; background:#0b0f12; color:#e6f0ea; font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif; }
+    html, body { margin:0; padding:0; height:100%; background:#87CEEB; color:#e6f0ea; font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif; }
     #app { position: fixed; inset: 0; display: grid; grid-template-rows: 1fr auto; }
     #c { width: 100%; height: 100%; display: block; }
     #panel { display:flex; gap:.75rem; align-items:center; padding:.5rem .8rem; background: rgba(15,18,22,.75); backdrop-filter: blur(10px); border-top: 1px solid rgba(255,255,255,.06); }
@@ -97,28 +97,44 @@ function updateCanvasSize() {
 }
 
 const scene = new THREE.Scene();
+scene.fog = new THREE.Fog(0x87CEEB, 3, 15); // Add fog for atmosphere
 const camera = new THREE.PerspectiveCamera(55, 1, 0.01, 100);
 
 // Initial setup
 updateCanvasSize();
 renderer.outputColorSpace = THREE.SRGBColorSpace;
-renderer.setClearColor(0x0b0f12, 1);
+renderer.setClearColor(0x87CEEB, 1); // Sky blue background
+renderer.shadowMap.enabled = true;
+renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 camera.position.set(1.6, 1.2, 1.8);
 const controls = new OrbitControls(camera, renderer.domElement);
 controls.enableDamping = true;
 controls.target.set(0, 0.5, 0);
 
-const hemi = new THREE.HemisphereLight(0xcfe8ff, 0x28423a, 0.65);
+// Enhanced lighting setup
+const ambient = new THREE.AmbientLight(0xffffff, 0.4); // Add ambient light for overall brightness
+scene.add(ambient);
+
+const hemi = new THREE.HemisphereLight(0x87CEEB, 0x7CFC00, 1.0); // Brighter sky/ground colors
 scene.add(hemi);
-const dir = new THREE.DirectionalLight(0xffffff, 0.7);
-dir.position.set(2,3,1);
+
+const dir = new THREE.DirectionalLight(0xffffff, 1.2); // Stronger sunlight
+dir.position.set(2, 4, 2);
+dir.castShadow = true;
+dir.shadow.camera.near = 0.1;
+dir.shadow.camera.far = 10;
+dir.shadow.camera.left = -3;
+dir.shadow.camera.right = 3;
+dir.shadow.camera.top = 3;
+dir.shadow.camera.bottom = -3;
 scene.add(dir);
 
 // ground
 const ground = new THREE.Mesh(
   new THREE.CylinderGeometry(2.5,2.5,0.02,64),
-  new THREE.MeshStandardMaterial({ color: 0x0e1418, roughness: 1, metalness: 0 })
+  new THREE.MeshStandardMaterial({ color: 0x8B7355, roughness: 0.8, metalness: 0 }) // Warm brown earth
 );
+ground.receiveShadow = true;
 ground.position.y = -0.01;
 scene.add(ground);
 
@@ -261,7 +277,7 @@ const PRESETS = {
     phyllotaxis: { enabled:true, divergence_deg:137.5, axial_offset:0.10, whorled_n:1 },
     leaf: { enabled:true, shape:"elliptic", length:0.12, width:0.06, curl:0.18, twist_deg: 8, margin:"serrate", density_per_internode: 1 },
     flower: { enabled:false },
-    materials: { stem:{ base_color:[0.32,0.23,0.16] }, leaf:{ base_color:[0.18,0.5,0.22] } },
+    materials: { stem:{ base_color:[0.55,0.40,0.30] }, leaf:{ base_color:[0.30,0.70,0.35] } },
     growth: {
       duration_s: 10,
       stages:[{"t":0,"state":"seed"},{"t":0.25,"state":"seedling"},{"t":0.6,"state":"vegetative"},{"t":1,"state":"mature"}],
@@ -279,7 +295,7 @@ const PRESETS = {
     phyllotaxis: { enabled: true, divergence_deg: 137.5, axial_offset: 0.05 },
     leaf: { enabled: true, shape:"lanceolate", length:0.16, width:0.03, curl:0.22, twist_deg: 6, density_per_internode: 1 },
     flower: { enabled: true, symmetry:"actinomorphic", petal_count:6, corolla_radius:0.03, petal_length:0.06, stamen_count:6, inflorescence:"solitary" },
-    materials: { stem:{ base_color:[0.35,0.25,0.18] }, leaf:{ base_color:[0.20,0.52,0.24] } },
+    materials: { stem:{ base_color:[0.45,0.60,0.35] }, leaf:{ base_color:[0.35,0.75,0.40] }, flower:{ base_color:[0.95,0.70,0.85] } },
     growth: {
       duration_s: 6,
       stages:[{"t":0,"state":"bulb"},{"t":0.2,"state":"sprout"},{"t":0.6,"state":"vegetative"},{"t":0.85,"state":"budding"},{"t":1,"state":"bloom"}],
@@ -297,7 +313,7 @@ const PRESETS = {
     grass: { blade_count: 140, blade_length: 0.45, blade_width: 0.006, clumping: 0.8 },
     leaf: { enabled: false },
     flower: { enabled: false },
-    materials: { stem:{ base_color:[0x2b/255,0x65/255,0x34/255] }, leaf:{ base_color:[0.18,0.55,0.26] } },
+    materials: { stem:{ base_color:[0.40,0.75,0.45] }, leaf:{ base_color:[0.35,0.80,0.40] } },
     growth: {
       duration_s: 5,
       stages:[{"t":0,"state":"seed"},{"t":0.2,"state":"sprout"},{"t":1,"state":"tuft"}],
