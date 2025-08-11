@@ -1,0 +1,751 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no" />
+  <title>FloraGraph (Three.js mobile)</title>
+  <style>
+    html, body { margin:0; padding:0; height:100%; background:#0b0f12; color:#e6f0ea; font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif; }
+    #app { position: fixed; inset: 0; display: grid; grid-template-rows: 1fr auto; }
+    #c { width: 100%; height: 100%; display: block; }
+    #panel { display:flex; gap:.75rem; align-items:center; padding:.5rem .8rem; background: rgba(15,18,22,.75); backdrop-filter: blur(10px); border-top: 1px solid rgba(255,255,255,.06); }
+    #panel > * { font-size: .95rem; }
+    button, select, input[type="range"] { -webkit-appearance:none; appearance:none; border:1px solid rgba(255,255,255,.12); background:#141a1f; color:#e6f0ea; border-radius:.5rem; padding:.4rem .6rem; }
+    button { font-weight:600; }
+    #tRange { flex:1; height: 28px; }
+    #fps { opacity:.75; font-variant-numeric: tabular-nums; }
+    #configWrap { display:none; }
+    textarea { width:100%; height:160px; border-radius:.5rem; border:1px solid rgba(255,255,255,.12); background:#0c1116; color:#cfe6d6; padding:.6rem; font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size:.85rem; }
+    .badge { font-size: .8rem; opacity:.7; }
+    @media (min-width: 800px) {
+      #configWrap { display:block; position: fixed; right: .75rem; bottom: 4.25rem; width: 360px; max-width: calc(100% - 1.5rem); }
+      #configWrap .card { background: rgba(20,25,30,.8); border:1px solid rgba(255,255,255,.08); border-radius:.7rem; overflow:hidden; }
+      #configWrap header { display:flex; justify-content: space-between; align-items:center; padding:.5rem .75rem; font-weight:600; background: rgba(255,255,255,.04); }
+      #configWrap .body { padding:.6rem .75rem .75rem; display:grid; gap:.5rem; }
+      #apply { width: 100%; }
+    }
+  </style>
+</head>
+<body>
+<div id="app">
+  <canvas id="c"></canvas>
+  <div id="panel">
+    <button id="play">▶︎</button>
+    <input id="tRange" type="range" min="0" max="1" step="0.001" value="0">
+    <span class="badge">t=<span id="tVal">0.00</span></span>
+    <select id="preset">
+      <option value="tree">Tree</option>
+      <option value="flower">Flower</option>
+      <option value="grass">Grass</option>
+    </select>
+    <span id="fps" title="smoothed framerate">— fps</span>
+  </div>
+
+  <div id="configWrap">
+    <div class="card">
+      <header>
+        <span>Config JSON (editable)</span>
+        <button id="apply">Rebuild</button>
+      </header>
+      <div class="body">
+        <textarea id="cfg"></textarea>
+        <small class="badge">Tip: paste your LLM-generated config and press Rebuild.</small>
+      </div>
+    </div>
+  </div>
+</div>
+<script type="importmap">
+  {
+    "imports": {
+      "three": "https://unpkg.com/three@0.161.0/build/three.module.js"
+    }
+  }
+</script>
+
+<script type="module">
+import * as THREE from 'https://unpkg.com/three@0.161.0/build/three.module.js';
+import { OrbitControls } from 'https://unpkg.com/three@0.161.0/examples/jsm/controls/OrbitControls.js';
+
+// ---------- utils
+const TAU = Math.PI * 2;
+const rand = (rng) => (rng.s ^= rng.s << 13, rng.s ^= rng.s >> 17, rng.s ^= rng.s << 5, (rng.s >>> 0) / 4294967296);
+const rngNew = (seed=1) => ({ s: seed>>>0 || 1 });
+
+function easeOutCubic(x){ return 1 - Math.pow(1 - x, 3); }
+function easeInOutSine(x){ return -(Math.cos(Math.PI * x) - 1) / 2; }
+function sigmoid(x){ return 1./(1.+Math.exp(-10.*(x-0.5))); }
+const CURVES = {
+  ease_out_cubic: easeOutCubic,
+  ease_in_out_sine: easeInOutSine,
+  sigmoid: sigmoid
+};
+
+function clamp(x, a, b){ return Math.max(a, Math.min(b, x)); }
+function mix(a,b,t){ return a*(1-t)+b*t; }
+
+// ---------- scene
+const canvas = document.getElementById('c');
+const renderer = new THREE.WebGLRenderer({ canvas, antialias: false, alpha: false, powerPreference: 'high-performance' });
+
+// Function to get proper canvas size
+function updateCanvasSize() {
+  const rect = canvas.getBoundingClientRect();
+  renderer.setPixelRatio(Math.min(devicePixelRatio, 1.5));
+  renderer.setSize(rect.width, rect.height);
+  camera.aspect = rect.width / rect.height;
+  camera.updateProjectionMatrix();
+}
+
+const scene = new THREE.Scene();
+const camera = new THREE.PerspectiveCamera(55, 1, 0.01, 100);
+
+// Initial setup
+updateCanvasSize();
+renderer.outputColorSpace = THREE.SRGBColorSpace;
+renderer.setClearColor(0x0b0f12, 1);
+camera.position.set(1.6, 1.2, 1.8);
+const controls = new OrbitControls(camera, renderer.domElement);
+controls.enableDamping = true;
+controls.target.set(0, 0.5, 0);
+
+const hemi = new THREE.HemisphereLight(0xcfe8ff, 0x28423a, 0.65);
+scene.add(hemi);
+const dir = new THREE.DirectionalLight(0xffffff, 0.7);
+dir.position.set(2,3,1);
+scene.add(dir);
+
+// ground
+const ground = new THREE.Mesh(
+  new THREE.CylinderGeometry(2.5,2.5,0.02,64),
+  new THREE.MeshStandardMaterial({ color: 0x0e1418, roughness: 1, metalness: 0 })
+);
+ground.position.y = -0.01;
+scene.add(ground);
+
+// ---------- shader factories
+function makeStemMaterial(stemColor = new THREE.Color(0x533c2a)) {
+  const mat = new THREE.ShaderMaterial({
+    transparent: false,
+    uniforms: {
+      uTime: { value: 0 },
+      uGlobalT: { value: 0 },
+      uBaseColor: { value: stemColor },
+      uWindAmp: { value: 0.015 },
+      uWindFreq: { value: 1.1 }
+    },
+    vertexShader: /* glsl */`
+      precision highp float;
+      uniform float uTime, uGlobalT, uWindAmp, uWindFreq;
+      attribute vec2 aRadii;     // r0, r1
+      attribute vec2 aAge;       // spawn, dur
+      attribute float aPhase;    // wind phase
+      varying float vT;          // local reveal 0..1 for fragment shading
+      void main(){
+        // base cylinder in local space (unit length along +Y)
+        vec3 p = position.xyz;
+        // time gating
+        float tLocal = clamp((uGlobalT - aAge.x) / max(aAge.y, 1e-4), 0.0, 1.0);
+        vT = tLocal;
+
+        // reveal along length
+        p.y *= tLocal;
+
+        // radius taper along (revealed) y
+        float r = mix(aRadii.x, aRadii.y, p.y);
+        p.x *= r;
+        p.z *= r;
+
+        // subtle wind bend: sway x with height^2 so tips move more
+        float bend = sin(aPhase + uTime * uWindFreq + p.y * 3.14159) * uWindAmp * p.y * p.y;
+        p.x += bend;
+
+        // instance transform
+        vec4 world = instanceMatrix * vec4(p, 1.0);
+        gl_Position = projectionMatrix * modelViewMatrix * world;
+      }
+    `,
+    fragmentShader: /* glsl */`
+      precision highp float;
+      uniform vec3 uBaseColor;
+      varying float vT;
+      void main(){
+        // darken younger segments a touch
+        float shade = mix(0.75, 1.0, vT);
+        gl_FragColor = vec4(uBaseColor * shade, 1.0);
+      }
+    `
+  });
+  return mat;
+}
+
+function makeLeafMaterial(leafColor = new THREE.Color(0x2f8a4c)) {
+  const mat = new THREE.ShaderMaterial({
+    side: THREE.DoubleSide,
+    uniforms: {
+      uTime: { value: 0 },
+      uGlobalT: { value: 0 },
+      uLeafColor: { value: leafColor },
+      uWindAmp: { value: 0.02 },
+      uWindFreq: { value: 1.3 }
+    },
+    vertexShader: /* glsl */`
+      precision highp float;
+      uniform float uTime, uGlobalT, uWindAmp, uWindFreq;
+      attribute vec4 aSize;      // length, width, twistDeg, curl
+      attribute vec2 aAge;       // spawn, dur
+      attribute float aPhase;    // wind phase
+      varying float vAge;
+      void main(){
+        float tLocal = clamp((uGlobalT - aAge.x) / max(aAge.y, 1e-4), 0.0, 1.0);
+        vAge = tLocal;
+
+        // base quad in XY plane: position.xy in [-0.5,0.5], y is longitudinal axis
+        vec3 p = position.xyz;
+        // scale to leaf size and reveal along length
+        float L = aSize.x;
+        float W = aSize.y;
+        float twist = radians(aSize.z);
+        float curl = aSize.w;
+        // reveal: only grow along Y
+        p.y = (p.y * 0.5 + 0.5) * L * tLocal;
+        p.x = (p.x) * W;
+
+        // twist around Y increasing toward tip
+        float tw = twist * (p.y / max(L, 1e-4));
+        float ct = cos(tw), st = sin(tw);
+        p = vec3(ct * p.x + 0.0 * p.y + -st * p.z, p.y, st * p.x + 0.0 * p.y + ct * p.z);
+
+        // curl by bending upward (simple parabola in z)
+        p.z += curl * (p.y/L) * (p.y/L) * 0.2;
+
+        // wind swish sideways, stronger at tip
+        float sway = sin(aPhase + uTime * uWindFreq + p.y * 10.0) * uWindAmp * pow(p.y / max(L, 1e-4), 1.5);
+        p.x += sway;
+
+        // instance transform
+        vec4 world = instanceMatrix * vec4(p, 1.0);
+        gl_Position = projectionMatrix * modelViewMatrix * world;
+      }
+    `,
+    fragmentShader: /* glsl */`
+      precision highp float;
+      uniform vec3 uLeafColor;
+      varying float vAge;
+      void main(){
+        // slight fresher tint near emergence
+        vec3 col = mix(uLeafColor * 1.25, uLeafColor, vAge);
+        gl_FragColor = vec4(col, 1.0);
+      }
+    `
+  });
+  return mat;
+}
+
+// ---------- geometry bases
+const stemBaseGeo = new THREE.CylinderGeometry(1, 1, 1, 8, 1, true); // unit radius, unit length (y)
+stemBaseGeo.translate(0, 0.5, 0); // base at y=0
+const leafBaseGeo = new THREE.PlaneGeometry(1, 1, 1, 1); // quad, we scale in shader
+
+// ---------- config presets
+const PRESETS = {
+  tree: {
+    version:"1.0",
+    seed: 7,
+    plant_type: "tree",
+    global: { height: 3.0, radius: 0.05, phototropism: 0.5, gravitropism: 0.2 },
+    skeleton: {
+      method: "space_colonization",
+      branching: { apical_dominance: 0.75, branch_prob: [[0,0.0],[0.3,0.45],[0.7,0.22],[1,0.1]], branch_angle_deg: 35, internode_len: {min:0.04, max:0.12}, thickness_ratio: 0.68, max_depth: 6 },
+      space_colonization: { attractor_volume:"ellipsoid", attractor_extent:[1.2,1.8,1.2], kill_dist:0.07, influence_dist:0.45, growth_step:0.05, attractor_count: 320 }
+    },
+    phyllotaxis: { enabled:true, divergence_deg:137.5, axial_offset:0.10, whorled_n:1 },
+    leaf: { enabled:true, shape:"elliptic", length:0.12, width:0.06, curl:0.18, twist_deg: 8, margin:"serrate", density_per_internode: 1 },
+    flower: { enabled:false },
+    materials: { stem:{ base_color:[0.32,0.23,0.16] }, leaf:{ base_color:[0.18,0.5,0.22] } },
+    growth: {
+      duration_s: 10,
+      stages:[{"t":0,"state":"seed"},{"t":0.25,"state":"seedling"},{"t":0.6,"state":"vegetative"},{"t":1,"state":"mature"}],
+      curves:{ internode_length:"ease_out_cubic", thickness:"sigmoid", leaf_unfurl:"ease_in_out_sine" },
+      phenology:{ leaf_flush_t:[0.35,0.8] }
+    },
+    wind:{ amp:0.015, freq: 1.0 }
+  },
+  flower: {
+    version:"1.0",
+    seed: 11,
+    plant_type: "flower",
+    global: { height: 0.35, radius: 0.005, phototropism: 0.3, gravitropism: 0.4 },
+    skeleton: { method:"single_stem", branching:{ max_depth:1, internode_len:{ min:0.03, max:0.05 }, thickness_ratio: 0.9, branch_angle_deg: 0 } },
+    phyllotaxis: { enabled: true, divergence_deg: 137.5, axial_offset: 0.05 },
+    leaf: { enabled: true, shape:"lanceolate", length:0.16, width:0.03, curl:0.22, twist_deg: 6, density_per_internode: 1 },
+    flower: { enabled: true, symmetry:"actinomorphic", petal_count:6, corolla_radius:0.03, petal_length:0.06, stamen_count:6, inflorescence:"solitary" },
+    materials: { stem:{ base_color:[0.35,0.25,0.18] }, leaf:{ base_color:[0.20,0.52,0.24] } },
+    growth: {
+      duration_s: 6,
+      stages:[{"t":0,"state":"bulb"},{"t":0.2,"state":"sprout"},{"t":0.6,"state":"vegetative"},{"t":0.85,"state":"budding"},{"t":1,"state":"bloom"}],
+      curves:{ internode_length:"ease_out_cubic", leaf_unfurl:"ease_in_out_sine" },
+      phenology:{ leaf_flush_t:[0.3,0.7] }
+    },
+    wind:{ amp:0.02, freq: 1.4 }
+  },
+  grass: {
+    version:"1.0",
+    seed: 5,
+    plant_type: "grass",
+    global: { height: 0.5, radius: 0.003, phototropism: 0.2, gravitropism: 0.6 },
+    skeleton: { method:"single_stem", branching:{ max_depth:0 } },
+    grass: { blade_count: 140, blade_length: 0.45, blade_width: 0.006, clumping: 0.8 },
+    leaf: { enabled: false },
+    flower: { enabled: false },
+    materials: { stem:{ base_color:[0x2b/255,0x65/255,0x34/255] }, leaf:{ base_color:[0.18,0.55,0.26] } },
+    growth: {
+      duration_s: 5,
+      stages:[{"t":0,"state":"seed"},{"t":0.2,"state":"sprout"},{"t":1,"state":"tuft"}],
+      curves:{ internode_length:"ease_out_cubic" }
+    },
+    wind: { amp: 0.035, freq: 1.6 }
+  }
+};
+
+// ---------- state
+let currentPlant = null;
+let playing = false;
+let globalT = 0;
+let clock = new THREE.Clock();
+let fpsEl = document.getElementById('fps');
+let tVal = document.getElementById('tVal');
+let tRange = document.getElementById('tRange');
+
+// ---------- plant builder
+class Plant {
+  constructor(config){
+    this.config = config;
+    this.group = new THREE.Group();
+    scene.add(this.group);
+    this.stemMat = makeStemMaterial(new THREE.Color().fromArray(config.materials?.stem?.base_color || [0.32,0.23,0.16]).convertSRGBToLinear());
+    this.leafMat = makeLeafMaterial(new THREE.Color().fromArray(config.materials?.leaf?.base_color || [0.18,0.5,0.22]).convertSRGBToLinear());
+    this.stemMat.uniforms.uWindAmp.value = config.wind?.amp ?? 0.015;
+    this.stemMat.uniforms.uWindFreq.value = config.wind?.freq ?? 1.1;
+    this.leafMat.uniforms.uWindAmp.value = (config.wind?.amp ?? 0.02) * 1.2;
+    this.leafMat.uniforms.uWindFreq.value = (config.wind?.freq ?? 1.3);
+
+    this.build();
+  }
+  dispose(){
+    if (this.group) { scene.remove(this.group); this.group.traverse(o=>{ if (o.geometry) o.geometry.dispose(); if (o.material) o.material.dispose?.(); }); }
+  }
+
+  build(){
+    const cfg = this.config;
+    const rng = rngNew(cfg.seed || 1);
+
+    // Skeleton generation
+    let edges = [];
+    let leaves = [];
+
+    if (cfg.plant_type === 'tree' || cfg.plant_type === 'shrub') {
+      const sc = cfg.skeleton.space_colonization;
+      const attractors = [];
+      const nAttr = sc.attractor_count || 280;
+      // sample ellipsoid canopy
+      for (let i=0; i<nAttr; i++){
+        // rejection sampling inside unit sphere then scale
+        let x, y, z, r2;
+        do {
+          x = rand(rng)*2-1; y = rand(rng)*2-1; z = rand(rng)*2-1;
+          r2 = x*x + y*y + z*z;
+        } while (r2 > 1);
+        attractors.push(new THREE.Vector3(
+          x*sc.attractor_extent[0],
+          Math.abs(y)*sc.attractor_extent[1],  // favor upward canopy
+          z*sc.attractor_extent[2]
+        ));
+      }
+      let tips = [{ p: new THREE.Vector3(0,0,0), d: new THREE.Vector3(0,1,0), depth:0 }];
+      const kill = sc.kill_dist, infl = sc.influence_dist, step = sc.growth_step;
+      const branchAng = (cfg.skeleton.branching.branch_angle_deg||35) * Math.PI/180;
+      const thicknessRatio = cfg.skeleton.branching.thickness_ratio ?? 0.68;
+      let radiiDepth = [cfg.global.radius || 0.05];
+
+      const maxIter = 280;
+      for (let iter=0; iter<maxIter && attractors.length>8; iter++){
+        // map each attractor to nearest tip within influence distance
+        const map = new Map();
+        for (let ai=attractors.length-1; ai>=0; ai--){
+          const A = attractors[ai];
+          let bestI = -1, bestDist2 = infl*infl;
+          for (let i=0; i<tips.length; i++){
+            const t = tips[i];
+            const d2 = t.p.distanceToSquared(A);
+            if (d2 < bestDist2) { bestDist2 = d2; bestI = i; }
+          }
+          if (bestI >= 0) {
+            if (!map.has(bestI)) map.set(bestI, []);
+            map.get(bestI).push(A);
+          }
+        }
+        // advance tips
+        const newTips = [];
+        map.forEach((arr, idx)=>{
+          const tip = tips[idx];
+          // average direction toward assigned attractors
+          const dir = new THREE.Vector3();
+          for (const A of arr) dir.add(A.clone().sub(tip.p).normalize());
+          dir.normalize();
+          // tropisms
+          const phot = cfg.global.phototropism ?? 0.5;
+          const grav = cfg.global.gravitropism ?? 0.2;
+          dir.addScaledVector(new THREE.Vector3(0,1,0), phot*0.5);
+          dir.addScaledVector(new THREE.Vector3(0,-1,0), grav*0.25).normalize();
+
+          const next = tip.p.clone().addScaledVector(dir, step);
+          edges.push({
+            a: tip.p.clone(),
+            b: next.clone(),
+            depth: tip.depth,
+            spawn: iter / maxIter,
+            dur: 0.25 + 0.5 * rand(rng),
+            r0: radiiDepth[tip.depth] ?? (radiiDepth[tip.depth] = (radiiDepth[tip.depth-1]||cfg.global.radius||0.05) * thicknessRatio),
+            r1: (radiiDepth[tip.depth+1] ?? ((radiiDepth[tip.depth]??0.02) * thicknessRatio))
+          });
+
+          // place leaves (simple: at end of internode)
+          if (cfg.leaf?.enabled && rand(rng) < 0.9){
+            const density = cfg.leaf.density_per_internode || 1;
+            let angleBase = rand(rng) * TAU;
+            for (let k=0;k<density;k++){
+              angleBase += (cfg.phyllotaxis?.divergence_deg??137.5) * Math.PI/180;
+              const dirL = new THREE.Vector3(Math.cos(angleBase), 0, Math.sin(angleBase));
+              const posL = next.clone().addScaledVector(dirL, 0.015 + 0.02*rand(rng));
+              leaves.push({
+                p: posL,
+                up: new THREE.Vector3(0,1,0),
+                dir: dirL,
+                spawn: clamp((iter / maxIter) + 0.1, 0, 1),
+                dur: 0.25 + 0.35 * rand(rng),
+                length: cfg.leaf.length ?? 0.12,
+                width: cfg.leaf.width ?? 0.06,
+                twist: cfg.leaf.twist_deg ?? 8,
+                curl: cfg.leaf.curl ?? 0.15,
+                phase: rand(rng)*TAU
+              });
+            }
+          }
+
+          // remove nearby attractors
+          for (let ai=attractors.length-1; ai>=0; ai--){
+            if (next.distanceToSquared(attractors[ai]) < kill*kill) {
+              attractors.splice(ai,1);
+            }
+          }
+
+          // continue this tip
+          newTips.push({ p: next, d: dir, depth: tip.depth });
+
+          // occasional lateral branch
+          const probCurve = cfg.skeleton.branching.branch_prob || [[0,0.0],[0.3,0.4],[0.7,0.2],[1,0.05]];
+          // piecewise over "age"
+          const age = iter/maxIter;
+          let pBranch = probCurve[probCurve.length-1][1];
+          for (let i=1;i<probCurve.length;i++){
+            if (age <= probCurve[i][0]) {
+              const [x0,y0] = probCurve[i-1], [x1,y1] = probCurve[i];
+              const t = (age - x0)/Math.max(1e-6, (x1 - x0));
+              pBranch = mix(y0,y1,t);
+              break;
+            }
+          }
+          // apical dominance damp branches near top
+          pBranch *= (cfg.skeleton.branching.apical_dominance ?? 0.7);
+          if (rand(rng) < pBranch && tip.depth < (cfg.skeleton.branching.max_depth ?? 5)) {
+            // generate lateral direction
+            const axis = new THREE.Vector3().crossVectors(dir, new THREE.Vector3(0,1,0));
+            if (axis.lengthSq() < 1e-4) axis.set(1,0,0);
+            axis.normalize();
+            const q = new THREE.Quaternion().setFromAxisAngle(axis, branchAng);
+            const lateral = dir.clone().applyQuaternion(q);
+            const next2 = tip.p.clone().addScaledVector(lateral, step*0.9);
+            edges.push({
+              a: tip.p.clone(), b: next2.clone(), depth: tip.depth+1,
+              spawn: iter / maxIter, dur: 0.3 + 0.4 * rand(rng),
+              r0: radiiDepth[tip.depth+1] ?? (radiiDepth[tip.depth] * thicknessRatio),
+              r1: (radiiDepth[tip.depth+2] ?? (radiiDepth[tip.depth+1] * thicknessRatio))
+            });
+            newTips.push({ p: next2, d: lateral, depth: tip.depth+1 });
+          }
+        });
+        tips = newTips;
+        // safety cap
+        if (edges.length > 900) break;
+      }
+    }
+    else if (cfg.plant_type === 'flower') {
+      // simple single stem + leaves
+      const stemSeg = 10;
+      let y = 0;
+      const Lmin = cfg.skeleton.branching.internode_len.min || 0.03;
+      const Lmax = cfg.skeleton.branching.internode_len.max || 0.05;
+      let r = cfg.global.radius || 0.006;
+      const tr = cfg.skeleton.branching.thickness_ratio ?? 0.9;
+      for (let i=0; i<stemSeg; i++){
+        const L = mix(Lmin, Lmax, Math.min(1, i/(stemSeg-1)));
+        const y2 = y + L;
+        edges.push({ a:new THREE.Vector3(0,y,0), b:new THREE.Vector3(0,y2,0), depth:i, spawn:i/stemSeg*0.8, dur:0.25, r0:r, r1:r*tr });
+        // leaves
+        if (cfg.leaf?.enabled && i>=2 && i<=7){
+          const angle = i * (cfg.phyllotaxis.divergence_deg||137.5) * Math.PI/180;
+          const dirL = new THREE.Vector3(Math.cos(angle), 0, Math.sin(angle));
+          const posL = new THREE.Vector3(0,y2,0).addScaledVector(dirL, 0.015 + 0.01*rand(rng));
+          leaves.push({
+            p: posL, up: new THREE.Vector3(0,1,0), dir: dirL,
+            spawn: clamp(i/stemSeg, 0, 1), dur: 0.35,
+            length: cfg.leaf.length || 0.16, width: cfg.leaf.width || 0.03,
+            twist: cfg.leaf.twist_deg || 6, curl: cfg.leaf.curl || 0.2,
+            phase: rand(rng)*TAU
+          });
+        }
+        y = y2; r *= tr;
+      }
+      // petals (act as "leaves" around the tip)
+      if (cfg.flower?.enabled){
+        const tip = new THREE.Vector3(0,y,0);
+        const petals = cfg.flower.petal_count || 6;
+        const R = cfg.flower.corolla_radius || 0.03;
+        for (let i=0; i<petals; i++){
+          const angle = i * TAU/petals;
+          const dirL = new THREE.Vector3(Math.cos(angle), 0, Math.sin(angle));
+          const posL = tip.clone().addScaledVector(dirL, R*0.5);
+          leaves.push({
+            p: posL, up:new THREE.Vector3(0,1,0), dir: dirL,
+            spawn: 0.85, dur: 0.2,
+            length: cfg.flower.petal_length || 0.06,
+            width: (cfg.flower.petal_length||0.06)*0.5,
+            twist: 12, curl: 0.05,
+            phase: rand(rng)*TAU
+          });
+        }
+      }
+    }
+    else if (cfg.plant_type === 'grass') {
+      // treat blades as "leaves" emerging from origin, many instances
+      const count = cfg.grass?.blade_count || 120;
+      for (let i=0;i<count;i++){
+        const ang = rand(rng)*TAU;
+        const r = Math.pow(rand(rng), cfg.grass?.clumping ?? 0.8) * 0.18;
+        const pos = new THREE.Vector3(Math.cos(ang)*r, 0, Math.sin(ang)*r);
+        const dirL = new THREE.Vector3(Math.cos(ang), 0, Math.sin(ang));
+        leaves.push({
+          p: pos, up: new THREE.Vector3(0,1,0), dir: dirL,
+          spawn: rand(rng)*0.3, dur: 0.3 + 0.3*rand(rng),
+          length: cfg.grass?.blade_length || 0.45,
+          width: cfg.grass?.blade_width || 0.006,
+          twist: 4, curl: 0.12,
+          phase: rand(rng)*TAU
+        });
+      }
+      // add a few short stems for variety
+      for (let i=0;i<40;i++){
+        const ang = rand(rng)*TAU;
+        const r = Math.pow(rand(rng), 0.9) * 0.15;
+        const base = new THREE.Vector3(Math.cos(ang)*r, 0, Math.sin(ang)*r);
+        const h = 0.05 + 0.12*rand(rng);
+        edges.push({ a: base, b: base.clone().add(new THREE.Vector3(0,h,0)), depth:0, spawn: rand(rng)*0.3, dur: 0.25, r0: 0.003, r1: 0.002 });
+      }
+    }
+
+    // ---------- build stem instancing
+    if (edges.length) {
+      const stemMesh = this._buildStemMesh(edges);
+      this.group.add(stemMesh);
+      this.stemMesh = stemMesh;
+    }
+
+    // ---------- build leaves instancing
+    if (leaves.length) {
+      const leafMesh = this._buildLeafMesh(leaves);
+      this.group.add(leafMesh);
+      this.leafMesh = leafMesh;
+    }
+
+    // scale/position plant to look nice
+    const height = this._estimateHeight(edges);
+    this.group.position.y = 0;
+    const s = 1.0; // uniform scale; could use cfg.global.height/height
+    this.group.scale.setScalar(s);
+  }
+
+  _estimateHeight(edges){
+    let h = 0;
+    for (const e of edges) h = Math.max(h, e.a.y, e.b.y);
+    return h||1;
+  }
+
+  _buildStemMesh(edges){
+    const N = edges.length;
+    const mesh = new THREE.InstancedMesh(stemBaseGeo, this.stemMat, N);
+    // attributes per instance
+    const aRadii = new Float32Array(N*2);
+    const aAge   = new Float32Array(N*2);
+    const aPhase = new Float32Array(N);
+    const dummy = new THREE.Object3D();
+    for (let i=0;i<N;i++){
+      const e = edges[i];
+      const v = e.b.clone().sub(e.a);
+      const len = v.length();
+      // Build instance matrix: align unit cylinder (y-axis) from e.a to e.b
+      const up = new THREE.Vector3(0,1,0);
+      const q = new THREE.Quaternion().setFromUnitVectors(up, v.clone().normalize());
+      dummy.position.copy(e.a);
+      dummy.quaternion.copy(q);
+      dummy.scale.set(1, len, 1); // length along y; radius handled in shader
+      dummy.updateMatrix();
+      mesh.setMatrixAt(i, dummy.matrix);
+
+      aRadii[i*2+0] = e.r0;
+      aRadii[i*2+1] = e.r1;
+      aAge[i*2+0] = e.spawn;
+      aAge[i*2+1] = e.dur;
+      aPhase[i] = Math.random()*TAU;
+    }
+    mesh.instanceMatrix.needsUpdate = true;
+    stemBaseGeo.setAttribute('aRadii', new THREE.InstancedBufferAttribute(aRadii, 2));
+    stemBaseGeo.setAttribute('aAge',   new THREE.InstancedBufferAttribute(aAge, 2));
+    stemBaseGeo.setAttribute('aPhase', new THREE.InstancedBufferAttribute(aPhase, 1));
+    return mesh;
+  }
+
+  _buildLeafMesh(leaves){
+    const N = leaves.length;
+    const mesh = new THREE.InstancedMesh(leafBaseGeo, this.leafMat, N);
+    const aSize  = new Float32Array(N*4);
+    const aAge   = new Float32Array(N*2);
+    const aPhase = new Float32Array(N);
+    const dummy = new THREE.Object3D();
+    for (let i=0;i<N;i++){
+      const L = leaves[i];
+      // orient plane so its +Y goes outward (leaf length), +X across blade
+      const yAxis = L.dir.clone().setY(0).normalize().multiplyScalar(0.0001).add(new THREE.Vector3(0,1,0)).normalize(); // slight outward tilt
+      const zAxis = new THREE.Vector3().crossVectors(yAxis, L.dir).normalize();
+      const xAxis = new THREE.Vector3().crossVectors(yAxis, zAxis).normalize();
+      const m = new THREE.Matrix4().makeBasis(xAxis, yAxis, zAxis);
+      dummy.position.copy(L.p);
+      dummy.quaternion.setFromRotationMatrix(m);
+      dummy.scale.setScalar(1);
+      dummy.updateMatrix();
+      mesh.setMatrixAt(i, dummy.matrix);
+
+      aSize[i*4+0] = L.length;
+      aSize[i*4+1] = L.width;
+      aSize[i*4+2] = L.twist;
+      aSize[i*4+3] = L.curl;
+      aAge[i*2+0] = L.spawn;
+      aAge[i*2+1] = L.dur;
+      aPhase[i] = L.phase ?? Math.random()*TAU;
+    }
+    mesh.instanceMatrix.needsUpdate = true;
+    leafBaseGeo.setAttribute('aSize',  new THREE.InstancedBufferAttribute(aSize, 4));
+    leafBaseGeo.setAttribute('aAge',   new THREE.InstancedBufferAttribute(aAge, 2));
+    leafBaseGeo.setAttribute('aPhase', new THREE.InstancedBufferAttribute(aPhase, 1));
+    return mesh;
+  }
+
+  updateUniforms(time, tNorm){
+    if (this.stemMat) { this.stemMat.uniforms.uTime.value = time; this.stemMat.uniforms.uGlobalT.value = tNorm; }
+    if (this.leafMat) { this.leafMat.uniforms.uTime.value = time; this.leafMat.uniforms.uGlobalT.value = tNorm; }
+  }
+}
+
+// ---------- controls & UI
+const playBtn = document.getElementById('play');
+const presetSel = document.getElementById('preset');
+const cfgText = document.getElementById('cfg');
+const applyBtn = document.getElementById('apply');
+
+function setPreset(name){
+  const cfg = structuredClone(PRESETS[name]);
+  cfgText.value = JSON.stringify(cfg, null, 2);
+  rebuild(cfg);
+}
+function rebuild(cfg){
+  if (currentPlant){ currentPlant.dispose(); }
+  currentPlant = new Plant(cfg);
+  globalT = 0;
+  tRange.value = '0';
+  tVal.textContent = '0.00';
+  renderOnce();
+}
+
+playBtn.addEventListener('click', ()=>{
+  playing = !playing;
+  playBtn.textContent = playing ? '❚❚' : '▶︎';
+  if (playing) clock.start(); else clock.stop();
+});
+
+presetSel.addEventListener('change', e=> setPreset(e.target.value));
+applyBtn.addEventListener('click', ()=>{
+  try {
+    const cfg = JSON.parse(cfgText.value);
+    rebuild(cfg);
+  } catch(err){
+    alert('Invalid JSON: ' + err.message);
+  }
+});
+tRange.addEventListener('input', ()=>{
+  globalT = parseFloat(tRange.value);
+  tVal.textContent = globalT.toFixed(2);
+  renderOnce();
+});
+
+// gestures: single tap toggles play/pause on mobile
+renderer.domElement.addEventListener('pointerdown', (e)=>{
+  if (e.pointerType === 'touch' && e.isPrimary && e.target === renderer.domElement) {
+    playing = !playing;
+    playBtn.textContent = playing ? '❚❚' : '▶︎';
+  }
+});
+
+// ---------- loop
+let fpsSmooth = 60;
+function animate(){
+  requestAnimationFrame(animate);
+  const dt = playing ? clock.getDelta() : 0;
+  if (playing) {
+    const cfg = currentPlant?.config || PRESETS.tree;
+    const dur = (cfg.growth?.duration_s || 8);
+    globalT = clamp(globalT + dt/dur, 0, 1);
+    tRange.value = String(globalT);
+    tVal.textContent = globalT.toFixed(2);
+  }
+  if (currentPlant){
+    const time = performance.now()*0.001;
+    currentPlant.updateUniforms(time, globalT);
+  }
+  controls.update();
+  renderer.render(scene, camera);
+
+  // fps
+  const instFps = 1/Math.max(1e-6, dt || (1/60));
+  fpsSmooth = mix(fpsSmooth, instFps, 0.05);
+  fpsEl.textContent = (Math.round(fpsSmooth*10)/10).toFixed(1) + ' fps';
+}
+
+function renderOnce(){
+  const time = performance.now()*0.001;
+  currentPlant?.updateUniforms(time, globalT);
+  controls.update();
+  renderer.render(scene, camera);
+}
+
+// init
+setPreset('tree');
+animate();
+
+// resize
+addEventListener('resize', ()=>{
+  updateCanvasSize();
+  renderOnce();
+});
+
+</script>
+</body>
+</html>
