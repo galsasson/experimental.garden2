@@ -1,0 +1,1805 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>FloraGraph - Procedural Plant Generator</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: #0a0a0a;
+            color: #e0e0e0;
+            overflow: hidden;
+        }
+
+        #container {
+            width: 100vw;
+            height: 100vh;
+            position: relative;
+        }
+
+        #canvas {
+            width: 100%;
+            height: 100%;
+        }
+
+        #controls {
+            position: absolute;
+            top: 20px;
+            left: 20px;
+            background: rgba(20, 20, 20, 0.95);
+            backdrop-filter: blur(10px);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            border-radius: 12px;
+            padding: 20px;
+            width: 320px;
+            max-height: calc(100vh - 40px);
+            overflow-y: auto;
+            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4);
+        }
+
+        #controls h1 {
+            font-size: 24px;
+            margin-bottom: 20px;
+            font-weight: 600;
+            background: linear-gradient(135deg, #4ade80, #22c55e);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+
+        .control-group {
+            margin-bottom: 20px;
+        }
+
+        .control-group label {
+            display: block;
+            margin-bottom: 8px;
+            font-size: 14px;
+            color: #a0a0a0;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            font-weight: 500;
+        }
+
+        select, input[type="range"], button {
+            width: 100%;
+            background: rgba(30, 30, 30, 0.8);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            border-radius: 8px;
+            color: #e0e0e0;
+            padding: 10px;
+            font-size: 14px;
+            transition: all 0.2s;
+        }
+
+        select:hover, input[type="range]:hover {
+            border-color: rgba(255, 255, 255, 0.2);
+        }
+
+        select:focus {
+            outline: none;
+            border-color: #4ade80;
+        }
+
+        input[type="range"] {
+            -webkit-appearance: none;
+            height: 6px;
+            padding: 0;
+            background: rgba(255, 255, 255, 0.1);
+        }
+
+        input[type="range"]::-webkit-slider-thumb {
+            -webkit-appearance: none;
+            width: 16px;
+            height: 16px;
+            border-radius: 50%;
+            background: #4ade80;
+            cursor: pointer;
+            transition: transform 0.2s;
+        }
+
+        input[type="range"]::-webkit-slider-thumb:hover {
+            transform: scale(1.2);
+        }
+
+        .range-value {
+            display: inline-block;
+            margin-left: 8px;
+            font-size: 12px;
+            color: #4ade80;
+            font-weight: 600;
+        }
+
+        button {
+            cursor: pointer;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            transition: all 0.2s;
+        }
+
+        button:hover {
+            transform: translateY(-1px);
+            box-shadow: 0 4px 12px rgba(74, 222, 128, 0.3);
+        }
+
+        #generateBtn {
+            background: linear-gradient(135deg, #4ade80, #22c55e);
+            border: none;
+            color: #0a0a0a;
+            padding: 12px;
+            margin-top: 10px;
+        }
+
+        #playBtn {
+            background: rgba(74, 222, 128, 0.2);
+            border-color: #4ade80;
+            margin-top: 10px;
+        }
+
+        .stats {
+            position: absolute;
+            bottom: 20px;
+            left: 20px;
+            font-size: 12px;
+            color: rgba(255, 255, 255, 0.6);
+            font-family: monospace;
+        }
+
+        #info {
+            position: absolute;
+            top: 20px;
+            right: 20px;
+            background: rgba(20, 20, 20, 0.95);
+            backdrop-filter: blur(10px);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            border-radius: 12px;
+            padding: 20px;
+            width: 280px;
+            font-size: 14px;
+            line-height: 1.6;
+        }
+
+        #info h2 {
+            font-size: 18px;
+            margin-bottom: 12px;
+            color: #4ade80;
+        }
+
+        #info p {
+            margin-bottom: 8px;
+            color: #a0a0a0;
+        }
+
+        .config-display {
+            background: rgba(30, 30, 30, 0.8);
+            border-radius: 8px;
+            padding: 12px;
+            margin-top: 15px;
+            font-family: monospace;
+            font-size: 12px;
+            max-height: 200px;
+            overflow-y: auto;
+            white-space: pre-wrap;
+            word-break: break-all;
+        }
+
+        ::-webkit-scrollbar {
+            width: 8px;
+        }
+
+        ::-webkit-scrollbar-track {
+            background: rgba(255, 255, 255, 0.05);
+            border-radius: 4px;
+        }
+
+        ::-webkit-scrollbar-thumb {
+            background: rgba(255, 255, 255, 0.2);
+            border-radius: 4px;
+        }
+
+        ::-webkit-scrollbar-thumb:hover {
+            background: rgba(255, 255, 255, 0.3);
+        }
+    </style>
+</head>
+<body>
+    <div id="container">
+        <canvas id="canvas"></canvas>
+        
+        <div id="controls">
+            <h1>FloraGraph</h1>
+            
+            <div class="control-group">
+                <label>Plant Type</label>
+                <select id="plantType">
+                    <option value="tree">Deciduous Tree</option>
+                    <option value="flower">Tulip Flower</option>
+                    <option value="grass">Grass Clump</option>
+                    <option value="pine">Pine Tree</option>
+                    <option value="bush">Dense Bush</option>
+                    <option value="fern">Fern</option>
+                    <option value="sunflower">Sunflower</option>
+                    <option value="willow">Weeping Willow</option>
+                </select>
+            </div>
+
+            <div class="control-group">
+                <label>Growth Time <span class="range-value" id="timeValue">0.00</span></label>
+                <input type="range" id="timeSlider" min="0" max="100" value="0" step="0.1">
+            </div>
+
+            <div class="control-group">
+                <label>Animation Speed <span class="range-value" id="speedValue">1.0x</span></label>
+                <input type="range" id="speedSlider" min="0" max="300" value="100" step="10">
+            </div>
+
+            <div class="control-group">
+                <label>Wind Strength <span class="range-value" id="windValue">0.5</span></label>
+                <input type="range" id="windSlider" min="0" max="100" value="50" step="1">
+            </div>
+
+            <button id="generateBtn">Generate New Plant</button>
+            <button id="playBtn">Play Growth Animation</button>
+        </div>
+
+        <div id="info">
+            <h2>About FloraGraph</h2>
+            <p>A procedural plant generator that creates animatable 3D models from parametric configurations.</p>
+            <p>Plants grow from seed to mature form using biological principles like phyllotaxis and tropisms.</p>
+            <div class="config-display" id="configDisplay"></div>
+        </div>
+
+        <div class="stats" id="stats"></div>
+    </div>
+
+    <script async src="https://unpkg.com/es-module-shims@1.6.3/dist/es-module-shims.js"></script>
+    <script type="importmap">
+    {
+        "imports": {
+            "three": "https://unpkg.com/three@0.150.0/build/three.module.js",
+            "three/addons/": "https://unpkg.com/three@0.150.0/examples/jsm/"
+        }
+    }
+    </script>
+    <script type="module">
+        import * as THREE from 'three';
+        import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+
+        // Meristem (growth tip) class
+        class Meristem {
+            constructor(pos, dir, depth, parent = null) {
+                this.pos = pos.clone();
+                this.dir = dir.clone().normalize();
+                this.depth = depth;
+                this.parent = parent;
+                this.age = 0;
+                this.children = [];
+            }
+
+            spawnBranch(dir, config) {
+                const child = new Meristem(
+                    this.pos,
+                    dir,
+                    this.depth + 1,
+                    this
+                );
+                this.children.push(child);
+                return child;
+            }
+        }
+
+        // Plant graph structure
+        class PlantGraph {
+            constructor() {
+                this.edges = [];
+                this.nodes = [];
+                this.leaves = [];
+                this.flowers = [];
+            }
+
+            addEdge(from, to, age, radius = 0.01) {
+                const edge = {
+                    from: from.clone(),
+                    to: to.clone(),
+                    age: age,
+                    radius: radius,
+                    leaves: [],
+                    flowers: []
+                };
+                this.edges.push(edge);
+                return edge;
+            }
+
+            addLeaf(position, normal, age, config) {
+                const leaf = {
+                    position: position.clone(),
+                    normal: normal.clone(),
+                    age: age,
+                    config: config
+                };
+                this.leaves.push(leaf);
+                return leaf;
+            }
+
+            addFlower(position, normal, age, config) {
+                const flower = {
+                    position: position.clone(),
+                    normal: normal.clone(),
+                    age: age,
+                    config: config
+                };
+                this.flowers.push(flower);
+                return flower;
+            }
+        }
+
+        // FloraGraph Core System
+        class FloraGraph {
+            constructor() {
+                this.configs = {
+                    tree: {
+                        seed: 7,
+                        plant_type: "tree",
+                        global: { 
+                            height: 3.5, 
+                            radius: 0.06, 
+                            looseness: 0.2,
+                            phototropism: 0.5, 
+                            gravitropism: 0.2 
+                        },
+                        skeleton: {
+                            method: "space_colonization",
+                            branching: { 
+                                apical_dominance: 0.75, 
+                                branch_prob: [[0, 0.0], [0.3, 0.5], [0.7, 0.25], [1, 0.1]], 
+                                branch_angle_deg: 35, 
+                                internode_len: { min: 0.04, max: 0.18 }, 
+                                thickness_ratio: 0.67, 
+                                max_depth: 6 
+                            },
+                            space_colonization: { 
+                                attractor_volume: "ellipsoid", 
+                                attractor_extent: [1.2, 2.0, 1.2], 
+                                kill_dist: 0.07, 
+                                influence_dist: 0.5, 
+                                growth_step: 0.05 
+                            }
+                        },
+                        phyllotaxis: { 
+                            enabled: true, 
+                            divergence_deg: 137.5, 
+                            axial_offset: 0.12, 
+                            whorled_n: 1 
+                        },
+                        leaf: { 
+                            enabled: true, 
+                            shape: "elliptic", 
+                            length: 0.12, 
+                            width: 0.06, 
+                            curl: 0.2, 
+                            twist_deg: 8, 
+                            margin: "serrate", 
+                            density_per_internode: 2 
+                        },
+                        flower: { enabled: false },
+                        materials: { 
+                            stem: { base_color: [0.32, 0.23, 0.16], roughness: 0.9 }, 
+                            leaf: { base_color: [0.18, 0.5, 0.22], subsurface: 0.3 } 
+                        },
+                        growth: {
+                            duration_s: 10,
+                            stages: [
+                                { t: 0, state: "seed" },
+                                { t: 0.2, state: "seedling" },
+                                { t: 0.6, state: "vegetative" },
+                                { t: 1, state: "mature" }
+                            ],
+                            curves: {
+                                internode_length: "ease_out_cubic",
+                                thickness: "sigmoid",
+                                leaf_unfurl: "ease_in_out_sine"
+                            },
+                            phenology: { leaf_flush_t: [0.35, 0.75] }
+                        },
+                        wind: { amp: 0.015, freq: 0.8, phase: 0.0 }
+                    },
+                    flower: {
+                        seed: 11,
+                        plant_type: "flower",
+                        global: { 
+                            height: 0.35, 
+                            radius: 0.005, 
+                            phototropism: 0.3, 
+                            gravitropism: 0.4 
+                        },
+                        skeleton: { 
+                            method: "single_stem", 
+                            branching: { 
+                                max_depth: 1, 
+                                internode_len: { min: 0.03, max: 0.05 } 
+                            } 
+                        },
+                        phyllotaxis: { 
+                            enabled: true, 
+                            divergence_deg: 137.5 
+                        },
+                        leaf: { 
+                            enabled: true, 
+                            shape: "lanceolate", 
+                            length: 0.15, 
+                            width: 0.03, 
+                            curl: 0.25, 
+                            density_per_internode: 1 
+                        },
+                        flower: { 
+                            enabled: true, 
+                            symmetry: "actinomorphic", 
+                            petal_count: 6, 
+                            corolla_radius: 0.025, 
+                            petal_length: 0.05, 
+                            stamen_count: 6, 
+                            inflorescence: "solitary" 
+                        },
+                        materials: {
+                            stem: { base_color: [0.25, 0.35, 0.20], roughness: 0.8 },
+                            leaf: { base_color: [0.22, 0.55, 0.25], subsurface: 0.4 },
+                            flower: { base_color: [0.9, 0.2, 0.4], emission: 0.1 }
+                        },
+                        growth: {
+                            duration_s: 6,
+                            stages: [
+                                { t: 0, state: "bulb" },
+                                { t: 0.2, state: "sprout" },
+                                { t: 0.6, state: "vegetative" },
+                                { t: 0.85, state: "budding" },
+                                { t: 1, state: "bloom" }
+                            ],
+                            curves: {
+                                internode_length: "ease_out_cubic",
+                                leaf_unfurl: "ease_in_out_sine",
+                                flower_open: "ease_in_quart"
+                            },
+                            phenology: {
+                                leaf_flush_t: [0.3, 0.7],
+                                flower_open_t: [0.85, 0.98]
+                            }
+                        },
+                        wind: { amp: 0.01, freq: 1.2, phase: 0.0 }
+                    },
+                    grass: {
+                        seed: 5,
+                        plant_type: "grass",
+                        global: { 
+                            height: 0.5, 
+                            radius: 0.003, 
+                            phototropism: 0.2, 
+                            gravitropism: 0.6 
+                        },
+                        skeleton: { 
+                            method: "single_stem", 
+                            branching: { max_depth: 0 } 
+                        },
+                        grass: { 
+                            blade_count: 120, 
+                            blade_length: 0.45, 
+                            blade_width: 0.006, 
+                            clumping: 0.8 
+                        },
+                        leaf: { enabled: false },
+                        flower: { enabled: false },
+                        materials: {
+                            stem: { base_color: [0.15, 0.35, 0.15], roughness: 0.9 },
+                            leaf: { base_color: [0.25, 0.55, 0.25], subsurface: 0.5 }
+                        },
+                        growth: {
+                            duration_s: 5,
+                            stages: [
+                                { t: 0, state: "seed" },
+                                { t: 0.2, state: "sprout" },
+                                { t: 1, state: "tuft" }
+                            ],
+                            curves: { internode_length: "ease_out_cubic" }
+                        },
+                        wind: { amp: 0.03, freq: 1.4, phase: 0.0 }
+                    },
+                    pine: {
+                        seed: 13,
+                        plant_type: "tree",
+                        global: { 
+                            height: 4.5, 
+                            radius: 0.08, 
+                            phototropism: 0.3, 
+                            gravitropism: 0.1 
+                        },
+                        skeleton: {
+                            method: "space_colonization",
+                            branching: { 
+                                apical_dominance: 0.85, 
+                                branch_prob: [[0, 0.0], [0.2, 0.6], [0.6, 0.4], [1, 0.1]], 
+                                branch_angle_deg: 75, 
+                                internode_len: { min: 0.03, max: 0.15 }, 
+                                thickness_ratio: 0.65, 
+                                max_depth: 8 
+                            },
+                            space_colonization: { 
+                                attractor_volume: "cone", 
+                                attractor_extent: [0.8, 3.5, 0.8], 
+                                kill_dist: 0.05, 
+                                influence_dist: 0.4, 
+                                growth_step: 0.04 
+                            }
+                        },
+                        phyllotaxis: { 
+                            enabled: true, 
+                            divergence_deg: 137.5, 
+                            axial_offset: 0.02, 
+                            whorled_n: 5 
+                        },
+                        leaf: { 
+                            enabled: true, 
+                            shape: "needle", 
+                            length: 0.08, 
+                            width: 0.002, 
+                            curl: 0.05, 
+                            twist_deg: 0, 
+                            margin: "entire", 
+                            density_per_internode: 25 
+                        },
+                        materials: {
+                            stem: { base_color: [0.25, 0.18, 0.12], roughness: 0.95 },
+                            leaf: { base_color: [0.1, 0.3, 0.15], subsurface: 0.2 }
+                        },
+                        growth: {
+                            duration_s: 12,
+                            stages: [
+                                { t: 0, state: "seed" },
+                                { t: 0.15, state: "seedling" },
+                                { t: 0.5, state: "sapling" },
+                                { t: 1, state: "mature" }
+                            ],
+                            curves: {
+                                internode_length: "ease_out_quad",
+                                thickness: "power",
+                                leaf_unfurl: "linear"
+                            },
+                            phenology: { leaf_flush_t: [0.2, 0.9] }
+                        },
+                        wind: { amp: 0.02, freq: 0.6, phase: 0.0 }
+                    },
+                    bush: {
+                        seed: 19,
+                        plant_type: "shrub",
+                        global: { 
+                            height: 1.8, 
+                            radius: 0.04, 
+                            looseness: 0.4,
+                            phototropism: 0.4, 
+                            gravitropism: 0.3 
+                        },
+                        skeleton: {
+                            method: "space_colonization",
+                            branching: { 
+                                apical_dominance: 0.55, 
+                                branch_prob: [[0, 0.0], [0.1, 0.7], [0.5, 0.5], [1, 0.2]], 
+                                branch_angle_deg: 45, 
+                                internode_len: { min: 0.02, max: 0.08 }, 
+                                thickness_ratio: 0.7, 
+                                max_depth: 5 
+                            },
+                            space_colonization: { 
+                                attractor_volume: "sphere", 
+                                attractor_extent: [1.0, 1.0, 1.0], 
+                                kill_dist: 0.04, 
+                                influence_dist: 0.3, 
+                                growth_step: 0.03 
+                            }
+                        },
+                        phyllotaxis: { 
+                            enabled: true, 
+                            divergence_deg: 137.5, 
+                            axial_offset: 0.05, 
+                            whorled_n: 2 
+                        },
+                        leaf: { 
+                            enabled: true, 
+                            shape: "elliptic", 
+                            length: 0.06, 
+                            width: 0.04, 
+                            curl: 0.15, 
+                            twist_deg: 15, 
+                            margin: "entire", 
+                            density_per_internode: 3 
+                        },
+                        materials: {
+                            stem: { base_color: [0.3, 0.25, 0.2], roughness: 0.85 },
+                            leaf: { base_color: [0.2, 0.45, 0.2], subsurface: 0.3 }
+                        },
+                        growth: {
+                            duration_s: 8,
+                            stages: [
+                                { t: 0, state: "seed" },
+                                { t: 0.2, state: "sprout" },
+                                { t: 0.6, state: "bushy" },
+                                { t: 1, state: "mature" }
+                            ],
+                            curves: {
+                                internode_length: "ease_out_cubic",
+                                thickness: "sigmoid",
+                                leaf_unfurl: "ease_in_out_sine"
+                            },
+                            phenology: { leaf_flush_t: [0.25, 0.8] }
+                        },
+                        wind: { amp: 0.025, freq: 1.0, phase: 0.0 }
+                    },
+                    fern: {
+                        seed: 23,
+                        plant_type: "fern",
+                        global: { 
+                            height: 0.8, 
+                            radius: 0.003, 
+                            phototropism: 0.2, 
+                            gravitropism: 0.5 
+                        },
+                        skeleton: {
+                            method: "radial_fronds",
+                            branching: { 
+                                max_depth: 2,
+                                branch_angle_deg: 30,
+                                internode_len: { min: 0.02, max: 0.04 },
+                                frond_count: 8
+                            }
+                        },
+                        phyllotaxis: { 
+                            enabled: true, 
+                            divergence_deg: 45, 
+                            axial_offset: 0.03 
+                        },
+                        leaf: { 
+                            enabled: true, 
+                            shape: "pinnate", 
+                            length: 0.35, 
+                            width: 0.08, 
+                            curl: 0.6, 
+                            twist_deg: 0, 
+                            margin: "lobed", 
+                            density_per_internode: 12 
+                        },
+                        materials: {
+                            stem: { base_color: [0.15, 0.25, 0.1], roughness: 0.8 },
+                            leaf: { base_color: [0.15, 0.45, 0.2], subsurface: 0.4 }
+                        },
+                        growth: {
+                            duration_s: 7,
+                            stages: [
+                                { t: 0, state: "spore" },
+                                { t: 0.3, state: "fiddlehead" },
+                                { t: 0.7, state: "unfurling" },
+                                { t: 1, state: "mature" }
+                            ],
+                            curves: {
+                                internode_length: "ease_out_cubic",
+                                leaf_unfurl: "ease_out_quad"
+                            },
+                            phenology: { leaf_flush_t: [0.2, 0.9] }
+                        },
+                        wind: { amp: 0.04, freq: 0.8, phase: 0.0 }
+                    },
+                    sunflower: {
+                        seed: 31,
+                        plant_type: "flower",
+                        global: { 
+                            height: 1.8, 
+                            radius: 0.015, 
+                            phototropism: 0.8, 
+                            gravitropism: 0.2 
+                        },
+                        skeleton: { 
+                            method: "single_stem", 
+                            branching: { 
+                                max_depth: 1, 
+                                internode_len: { min: 0.05, max: 0.15 } 
+                            } 
+                        },
+                        phyllotaxis: { 
+                            enabled: true, 
+                            divergence_deg: 137.5, 
+                            axial_offset: 0.1 
+                        },
+                        leaf: { 
+                            enabled: true, 
+                            shape: "cordate", 
+                            length: 0.25, 
+                            width: 0.2, 
+                            curl: 0.1, 
+                            twist_deg: 5, 
+                            margin: "serrate", 
+                            density_per_internode: 1 
+                        },
+                        flower: { 
+                            enabled: true, 
+                            symmetry: "actinomorphic", 
+                            petal_count: 34, 
+                            corolla_radius: 0.15, 
+                            petal_length: 0.08, 
+                            stamen_count: 100, 
+                            inflorescence: "head" 
+                        },
+                        materials: {
+                            stem: { base_color: [0.3, 0.35, 0.15], roughness: 0.7 },
+                            leaf: { base_color: [0.25, 0.5, 0.2], subsurface: 0.35 },
+                            flower: { base_color: [0.95, 0.8, 0.1], emission: 0.05 }
+                        },
+                        growth: {
+                            duration_s: 9,
+                            stages: [
+                                { t: 0, state: "seed" },
+                                { t: 0.15, state: "cotyledon" },
+                                { t: 0.5, state: "vegetative" },
+                                { t: 0.8, state: "budding" },
+                                { t: 1, state: "bloom" }
+                            ],
+                            curves: {
+                                internode_length: "ease_out_cubic",
+                                thickness: "sigmoid",
+                                leaf_unfurl: "ease_in_out_sine",
+                                flower_open: "ease_out_quad"
+                            },
+                            phenology: {
+                                leaf_flush_t: [0.2, 0.7],
+                                flower_open_t: [0.8, 0.95]
+                            }
+                        },
+                        wind: { amp: 0.015, freq: 0.5, phase: 0.0 }
+                    },
+                    willow: {
+                        seed: 37,
+                        plant_type: "tree",
+                        global: { 
+                            height: 3.0, 
+                            radius: 0.05, 
+                            looseness: 0.6,
+                            phototropism: 0.3, 
+                            gravitropism: 0.7 
+                        },
+                        skeleton: {
+                            method: "space_colonization",
+                            branching: { 
+                                apical_dominance: 0.4, 
+                                branch_prob: [[0, 0.0], [0.2, 0.6], [0.5, 0.4], [1, 0.3]], 
+                                branch_angle_deg: 65, 
+                                internode_len: { min: 0.03, max: 0.12 }, 
+                                thickness_ratio: 0.68, 
+                                max_depth: 7,
+                                droop_factor: 0.8
+                            },
+                            space_colonization: { 
+                                attractor_volume: "dome", 
+                                attractor_extent: [1.5, 1.2, 1.5], 
+                                kill_dist: 0.06, 
+                                influence_dist: 0.4, 
+                                growth_step: 0.04 
+                            }
+                        },
+                        phyllotaxis: { 
+                            enabled: true, 
+                            divergence_deg: 137.5, 
+                            axial_offset: 0.08 
+                        },
+                        leaf: { 
+                            enabled: true, 
+                            shape: "lanceolate", 
+                            length: 0.1, 
+                            width: 0.015, 
+                            curl: 0.1, 
+                            twist_deg: 20, 
+                            margin: "serrate", 
+                            density_per_internode: 3 
+                        },
+                        materials: {
+                            stem: { base_color: [0.35, 0.3, 0.25], roughness: 0.85 },
+                            leaf: { base_color: [0.3, 0.55, 0.3], subsurface: 0.25 }
+                        },
+                        growth: {
+                            duration_s: 10,
+                            stages: [
+                                { t: 0, state: "cutting" },
+                                { t: 0.2, state: "rooting" },
+                                { t: 0.6, state: "branching" },
+                                { t: 1, state: "weeping" }
+                            ],
+                            curves: {
+                                internode_length: "ease_out_cubic",
+                                thickness: "sigmoid",
+                                leaf_unfurl: "ease_in_out_sine"
+                            },
+                            phenology: { leaf_flush_t: [0.25, 0.85] }
+                        },
+                        wind: { amp: 0.035, freq: 0.7, phase: 0.0 }
+                    }
+                };
+            }
+
+            // Easing functions
+            easingFunctions = {
+                linear: (t) => t,
+                ease_out_cubic: (t) => 1 - Math.pow(1 - t, 3),
+                ease_in_out_sine: (t) => -(Math.cos(Math.PI * t) - 1) / 2,
+                ease_in_quart: (t) => t * t * t * t,
+                ease_out_quad: (t) => t * (2 - t),
+                sigmoid: (t) => 1 / (1 + Math.exp(-10 * (t - 0.5))),
+                power: (t) => Math.pow(t, 1.5)
+            };
+
+            // Apply easing curve
+            applyCurve(curveName, t) {
+                const fn = this.easingFunctions[curveName] || this.easingFunctions.linear;
+                return fn(Math.max(0, Math.min(1, t)));
+            }
+
+            // Random number generator with seed
+            createRNG(seed) {
+                let s = seed;
+                return () => {
+                    s = (s * 1664525 + 1013904223) % 4294967296;
+                    return s / 4294967296;
+                };
+            }
+
+
+
+
+
+            // Space colonization algorithm
+            spaceColonization(config, t, rng) {
+                const graph = new PlantGraph();
+                const attractors = this.generateAttractors(config, rng);
+                
+                // Initialize with single meristem at origin
+                const tips = [new Meristem(
+                    new THREE.Vector3(0, 0, 0),
+                    new THREE.Vector3(0, 1, 0),
+                    0
+                )];
+
+                const maxIterations = 500;
+                let iteration = 0;
+
+                while (tips.length > 0 && iteration < maxIterations) {
+                    iteration++;
+                    const newTips = [];
+
+                    for (const tip of tips) {
+                        // Find attractors within influence distance
+                        const nearbyAttractors = [];
+                        let avgDir = new THREE.Vector3();
+
+                        for (let i = attractors.length - 1; i >= 0; i--) {
+                            const dist = tip.pos.distanceTo(attractors[i]);
+                            
+                            if (dist < config.skeleton.space_colonization.kill_dist) {
+                                attractors.splice(i, 1);
+                            } else if (dist < config.skeleton.space_colonization.influence_dist) {
+                                const dir = new THREE.Vector3().subVectors(attractors[i], tip.pos).normalize();
+                                avgDir.add(dir);
+                                nearbyAttractors.push(attractors[i]);
+                            }
+                        }
+
+                        if (nearbyAttractors.length > 0) {
+                            avgDir.normalize();
+                            
+                            // Apply tropisms
+                            avgDir = this.applyTropisms(avgDir, config);
+                            
+                            // Growth step with time-based modulation
+                            const growthCurve = this.applyCurve(config.growth.curves.internode_length, t);
+                            const step = config.skeleton.space_colonization.growth_step * growthCurve;
+                            
+                            const newPos = tip.pos.clone().add(avgDir.multiplyScalar(step));
+                            
+                            // Add edge to graph
+                            const edge = graph.addEdge(tip.pos, newPos, t);
+                            edge.radius = this.calculateRadius(tip, config, t);
+                            
+                            // Update tip position
+                            tip.pos = newPos;
+                            tip.age += 0.01;
+                            
+                            // Branching decision
+                            if (tip.depth < config.skeleton.branching.max_depth) {
+                                const branchProb = this.interpolateBranchProb(
+                                    tip.depth / config.skeleton.branching.max_depth,
+                                    config.skeleton.branching.branch_prob
+                                );
+                                
+                                if (rng() < branchProb * t) {
+                                    const branchDir = this.randomLateralDirection(avgDir, config, rng);
+                                    newTips.push(tip.spawnBranch(branchDir, config));
+                                }
+                            }
+                            
+                            newTips.push(tip);
+                        }
+                    }
+
+                    tips.length = 0;
+                    tips.push(...newTips);
+
+                    if (attractors.length === 0) break;
+                }
+
+                return graph;
+            }
+
+            // Generate attraction points for space colonization
+            generateAttractors(config, rng) {
+                const attractors = [];
+                const sc = config.skeleton.space_colonization;
+                const count = 500;
+
+                for (let i = 0; i < count; i++) {
+                    let pos;
+                    
+                    switch (sc.attractor_volume) {
+                        case "ellipsoid":
+                            const theta = rng() * Math.PI * 2;
+                            const phi = Math.acos(2 * rng() - 1);
+                            const r = Math.pow(rng(), 1/3);
+                            
+                            pos = new THREE.Vector3(
+                                r * Math.sin(phi) * Math.cos(theta) * sc.attractor_extent[0],
+                                r * Math.cos(phi) * sc.attractor_extent[1] + sc.attractor_extent[1] * 0.5,
+                                r * Math.sin(phi) * Math.sin(theta) * sc.attractor_extent[2]
+                            );
+                            break;
+                            
+                        case "cone":
+                            const angle = rng() * Math.PI * 2;
+                            const height = rng();
+                            const radius = (1 - height) * rng();
+                            
+                            pos = new THREE.Vector3(
+                                radius * Math.cos(angle) * sc.attractor_extent[0],
+                                height * sc.attractor_extent[1],
+                                radius * Math.sin(angle) * sc.attractor_extent[2]
+                            );
+                            break;
+                            
+                        case "sphere":
+                            const th = rng() * Math.PI * 2;
+                            const ph = Math.acos(2 * rng() - 1);
+                            const rad = Math.pow(rng(), 1/3);
+                            
+                            pos = new THREE.Vector3(
+                                rad * Math.sin(ph) * Math.cos(th) * sc.attractor_extent[0],
+                                rad * Math.cos(ph) * sc.attractor_extent[1] + sc.attractor_extent[1],
+                                rad * Math.sin(ph) * Math.sin(th) * sc.attractor_extent[2]
+                            );
+                            break;
+                            
+                        case "dome":
+                            const a = rng() * Math.PI * 2;
+                            const p = Math.acos(1 - rng()); // hemisphere
+                            const rd = Math.pow(rng(), 1/3);
+                            
+                            pos = new THREE.Vector3(
+                                rd * Math.sin(p) * Math.cos(a) * sc.attractor_extent[0],
+                                rd * Math.cos(p) * sc.attractor_extent[1],
+                                rd * Math.sin(p) * Math.sin(a) * sc.attractor_extent[2]
+                            );
+                            break;
+                    }
+                    
+                    attractors.push(pos);
+                }
+
+                return attractors;
+            }
+
+            // Apply tropisms (light and gravity response)
+            applyTropisms(dir, config) {
+                const result = dir.clone();
+                
+                // Phototropism (toward light)
+                const lightDir = new THREE.Vector3(0.3, 1, 0.2).normalize();
+                result.lerp(lightDir, config.global.phototropism * 0.1);
+                
+                // Gravitropism
+                const gravity = new THREE.Vector3(0, -1, 0);
+                if (config.skeleton.branching.droop_factor) {
+                    result.lerp(gravity, config.global.gravitropism * config.skeleton.branching.droop_factor * 0.1);
+                } else {
+                    result.lerp(gravity, -config.global.gravitropism * 0.1);
+                }
+                
+                return result.normalize();
+            }
+
+            // Interpolate branch probability from curve
+            interpolateBranchProb(t, curve) {
+                for (let i = 0; i < curve.length - 1; i++) {
+                    if (t >= curve[i][0] && t <= curve[i + 1][0]) {
+                        const ratio = (t - curve[i][0]) / (curve[i + 1][0] - curve[i][0]);
+                        return curve[i][1] + (curve[i + 1][1] - curve[i][1]) * ratio;
+                    }
+                }
+                return curve[curve.length - 1][1];
+            }
+
+            // Generate random lateral direction for branching
+            randomLateralDirection(parentDir, config, rng) {
+                const angle = (config.skeleton.branching.branch_angle_deg * Math.PI / 180);
+                const rotation = rng() * Math.PI * 2;
+                
+                // Create perpendicular vector
+                const perp = new THREE.Vector3();
+                if (Math.abs(parentDir.y) < 0.9) {
+                    perp.crossVectors(parentDir, new THREE.Vector3(0, 1, 0));
+                } else {
+                    perp.crossVectors(parentDir, new THREE.Vector3(1, 0, 0));
+                }
+                perp.normalize();
+                
+                // Rotate around parent direction
+                const quaternion = new THREE.Quaternion().setFromAxisAngle(parentDir, rotation);
+                perp.applyQuaternion(quaternion);
+                
+                // Apply branch angle
+                const result = parentDir.clone();
+                result.lerp(perp, Math.sin(angle));
+                
+                return result.normalize();
+            }
+
+            // Calculate radius based on allometry
+            calculateRadius(meristem, config, t) {
+                const depthRatio = meristem.depth / config.skeleton.branching.max_depth;
+                const baseRadius = config.global.radius;
+                const thicknessRatio = config.skeleton.branching.thickness_ratio;
+                
+                const targetRadius = baseRadius * Math.pow(thicknessRatio, meristem.depth);
+                const growthCurve = this.applyCurve(config.growth.curves.thickness || "sigmoid", t);
+                
+                return targetRadius * growthCurve;
+            }
+
+            // Generate single stem (for flowers and simple plants)
+            generateSingleStem(config, t, rng) {
+                const graph = new PlantGraph();
+                const height = config.global.height * t;
+                const segments = Math.floor(height / 0.05);
+                
+                let pos = new THREE.Vector3(0, 0, 0);
+                let dir = new THREE.Vector3(0, 1, 0);
+                
+                for (let i = 0; i < segments; i++) {
+                    const segmentT = i / segments;
+                    const stepSize = height / segments;
+                    
+                    // Apply slight curve
+                    dir = this.applyTropisms(dir, config);
+                    dir.x += (rng() - 0.5) * 0.02;
+                    dir.z += (rng() - 0.5) * 0.02;
+                    dir.normalize();
+                    
+                    const newPos = pos.clone().add(dir.clone().multiplyScalar(stepSize));
+                    
+                    const edge = graph.addEdge(pos, newPos, segmentT * t);
+                    edge.radius = config.global.radius * this.applyCurve(config.growth.curves.thickness || "sigmoid", segmentT * t);
+                    
+                    pos = newPos;
+                }
+                
+                return graph;
+            }
+
+            // Generate radial fronds (for ferns)
+            generateRadialFronds(config, t, rng) {
+                const graph = new PlantGraph();
+                const frondCount = config.skeleton.branching.frond_count || 8;
+                
+                for (let i = 0; i < frondCount; i++) {
+                    const angle = (i / frondCount) * Math.PI * 2;
+                    const frondT = Math.min(1, t * 1.5 - i * 0.05);
+                    
+                    if (frondT <= 0) continue;
+                    
+                    const baseDir = new THREE.Vector3(
+                        Math.cos(angle),
+                        0.2,
+                        Math.sin(angle)
+                    ).normalize();
+                    
+                    let pos = new THREE.Vector3(0, 0.05, 0);
+                    const frondLength = config.leaf.length * frondT;
+                    const segments = 20;
+                    
+                    for (let j = 0; j < segments; j++) {
+                        const segT = j / segments;
+                        const curl = config.leaf.curl * segT * frondT;
+                        
+                        const dir = baseDir.clone();
+                        dir.y -= curl;
+                        dir.normalize();
+                        
+                        const stepSize = frondLength / segments;
+                        const newPos = pos.clone().add(dir.multiplyScalar(stepSize));
+                        
+                        const edge = graph.addEdge(pos, newPos, frondT);
+                        edge.radius = config.global.radius * (1 - segT * 0.8) * frondT;
+                        
+                        pos = newPos;
+                    }
+                }
+                
+                return graph;
+            }
+
+            // Main growth function
+            grow(config, t) {
+                const rng = this.createRNG(config.seed + Math.floor(t * 1000));
+                let graph;
+                
+                // Generate skeleton based on method
+                switch (config.skeleton.method) {
+                    case "space_colonization":
+                        graph = this.spaceColonization(config, t, rng);
+                        break;
+                    case "single_stem":
+                        graph = this.generateSingleStem(config, t, rng);
+                        break;
+                    case "radial_fronds":
+                        graph = this.generateRadialFronds(config, t, rng);
+                        break;
+                    default:
+                        graph = this.generateSingleStem(config, t, rng);
+                }
+                
+                // Add organs (leaves and flowers) with phyllotaxis
+                if (config.phyllotaxis.enabled) {
+                    this.placeOrgans(graph, config, t, rng);
+                }
+                
+                // Generate grass blades if grass type
+                if (config.plant_type === "grass" && config.grass) {
+                    this.generateGrassBlades(graph, config, t, rng);
+                }
+                
+                return graph;
+            }
+
+            // Place organs using phyllotaxis
+            placeOrgans(graph, config, t, rng) {
+                let leafIndex = 0;
+                let flowerIndex = 0;
+                
+                for (const edge of graph.edges) {
+                    const edgeLength = edge.from.distanceTo(edge.to);
+                    const placementDist = config.phyllotaxis.axial_offset || 0.1;
+                    const placements = Math.floor(edgeLength / placementDist);
+                    
+                    for (let i = 0; i < placements; i++) {
+                        const localT = i / placements;
+                        const pos = new THREE.Vector3().lerpVectors(edge.from, edge.to, localT);
+                        
+                        // Check phenology windows
+                        if (config.leaf.enabled && config.growth.phenology && 
+                            t >= config.growth.phenology.leaf_flush_t[0] && 
+                            t <= config.growth.phenology.leaf_flush_t[1]) {
+                            
+                            for (let j = 0; j < config.leaf.density_per_internode; j++) {
+                                const angle = leafIndex * config.phyllotaxis.divergence_deg * Math.PI / 180;
+                                const normal = new THREE.Vector3(
+                                    Math.cos(angle),
+                                    0.1,
+                                    Math.sin(angle)
+                                ).normalize();
+                                
+                                const leafAge = (t - config.growth.phenology.leaf_flush_t[0]) / 
+                                               (config.growth.phenology.leaf_flush_t[1] - config.growth.phenology.leaf_flush_t[0]);
+                                
+                                graph.addLeaf(pos, normal, leafAge, config.leaf);
+                                leafIndex++;
+                            }
+                        }
+                        
+                        // Place flowers
+                        if (config.flower.enabled && config.growth.phenology &&
+                            config.growth.phenology.flower_open_t &&
+                            t >= config.growth.phenology.flower_open_t[0]) {
+                            
+                            const flowerAge = (t - config.growth.phenology.flower_open_t[0]) / 
+                                            (config.growth.phenology.flower_open_t[1] - config.growth.phenology.flower_open_t[0]);
+                            
+                            // Only place flowers at tips for most plants
+                            if (i === placements - 1 && edge === graph.edges[graph.edges.length - 1]) {
+                                graph.addFlower(pos, new THREE.Vector3(0, 1, 0), flowerAge, config.flower);
+                            }
+                        }
+                    }
+                }
+            }
+
+            // Generate grass blades
+            generateGrassBlades(graph, config, t, rng) {
+                const bladeCount = config.grass.blade_count;
+                const clumping = config.grass.clumping;
+                
+                for (let i = 0; i < bladeCount; i++) {
+                    const bladeT = Math.min(1, t * 2 - i / bladeCount * 0.5);
+                    if (bladeT <= 0) continue;
+                    
+                    // Position with clumping
+                    const angle = rng() * Math.PI * 2;
+                    const radius = Math.pow(rng(), clumping) * 0.1;
+                    const basePos = new THREE.Vector3(
+                        Math.cos(angle) * radius,
+                        0,
+                        Math.sin(angle) * radius
+                    );
+                    
+                    // Blade direction with slight randomness
+                    const bladeDir = new THREE.Vector3(
+                        (rng() - 0.5) * 0.3,
+                        1,
+                        (rng() - 0.5) * 0.3
+                    ).normalize();
+                    
+                    // Create blade as curved line
+                    const bladeLength = config.grass.blade_length * bladeT;
+                    const segments = 8;
+                    let pos = basePos.clone();
+                    
+                    for (let j = 0; j < segments; j++) {
+                        const segT = j / segments;
+                        const gravity = segT * segT * 0.5; // Droop
+                        
+                        const dir = bladeDir.clone();
+                        dir.y -= gravity;
+                        dir.normalize();
+                        
+                        const stepSize = bladeLength / segments;
+                        const newPos = pos.clone().add(dir.multiplyScalar(stepSize));
+                        
+                        const edge = graph.addEdge(pos, newPos, bladeT);
+                        edge.radius = config.grass.blade_width * 0.5 * (1 - segT * 0.5) * bladeT;
+                        edge.isGrassBlade = true;
+                        
+                        pos = newPos;
+                    }
+                }
+            }
+
+            // Compile geometry from graph
+            compileGeometry(graph, config, t, windTime = 0) {
+                const group = new THREE.Group();
+                
+                // Create stem/branch geometry
+                const stemGeometry = this.createStemGeometry(graph, config, t, windTime);
+                if (stemGeometry) {
+                    const stemMaterial = new THREE.MeshStandardMaterial({
+                        color: new THREE.Color(...config.materials.stem.base_color),
+                        roughness: config.materials.stem.roughness || 0.8
+                    });
+                    const stemMesh = new THREE.Mesh(stemGeometry, stemMaterial);
+                    group.add(stemMesh);
+                }
+                
+                // Create leaf geometry
+                if (graph.leaves.length > 0) {
+                    const leafMesh = this.createLeafInstances(graph.leaves, config, t, windTime);
+                    group.add(leafMesh);
+                }
+                
+                // Create flower geometry
+                if (graph.flowers.length > 0) {
+                    const flowerMesh = this.createFlowerInstances(graph.flowers, config, t, windTime);
+                    group.add(flowerMesh);
+                }
+                
+                return group;
+            }
+
+            // Create stem geometry using swept cylinders
+            createStemGeometry(graph, config, t, windTime) {
+                if (graph.edges.length === 0) return null;
+                
+                const vertices = [];
+                const indices = [];
+                const normals = [];
+                const uvs = [];
+                let vertexOffset = 0;
+                
+                for (const edge of graph.edges) {
+                    const segments = 8; // Radial segments
+                    const from = edge.from.clone();
+                    const to = edge.to.clone();
+                    
+                    // Apply wind
+                    if (windTime > 0 && config.wind) {
+                        const windOffset = Math.sin(windTime * config.wind.freq + edge.from.y * 2) * config.wind.amp;
+                        to.x += windOffset * edge.to.y; // More wind at top
+                        to.z += windOffset * 0.5 * edge.to.y;
+                    }
+                    
+                    const dir = new THREE.Vector3().subVectors(to, from).normalize();
+                    const length = from.distanceTo(to);
+                    
+                    // Skip very short edges
+                    if (length < 0.001) continue;
+                    
+                    // Create rotation basis
+                    const up = new THREE.Vector3(0, 1, 0);
+                    const right = new THREE.Vector3().crossVectors(dir, up).normalize();
+                    if (right.length() < 0.1) {
+                        right.set(1, 0, 0);
+                    }
+                    const forward = new THREE.Vector3().crossVectors(right, dir).normalize();
+                    
+                    // Generate cylinder vertices
+                    for (let i = 0; i <= 1; i++) {
+                        const pos = new THREE.Vector3().lerpVectors(from, to, i);
+                        const radius = edge.radius * (1 - i * 0.2); // Taper
+                        
+                        for (let j = 0; j <= segments; j++) {
+                            const angle = (j / segments) * Math.PI * 2;
+                            const x = Math.cos(angle) * radius;
+                            const y = Math.sin(angle) * radius;
+                            
+                            const offset = right.clone().multiplyScalar(x).add(forward.clone().multiplyScalar(y));
+                            const vertex = pos.clone().add(offset);
+                            
+                            vertices.push(vertex.x, vertex.y, vertex.z);
+                            normals.push(offset.x, offset.y, offset.z);
+                            uvs.push(j / segments, i);
+                        }
+                    }
+                    
+                    // Generate indices
+                    for (let i = 0; i < 1; i++) {
+                        for (let j = 0; j < segments; j++) {
+                            const a = vertexOffset + i * (segments + 1) + j;
+                            const b = vertexOffset + i * (segments + 1) + j + 1;
+                            const c = vertexOffset + (i + 1) * (segments + 1) + j;
+                            const d = vertexOffset + (i + 1) * (segments + 1) + j + 1;
+                            
+                            indices.push(a, c, b);
+                            indices.push(b, c, d);
+                        }
+                    }
+                    
+                    vertexOffset += 2 * (segments + 1);
+                }
+                
+                const geometry = new THREE.BufferGeometry();
+                geometry.setAttribute('position', new THREE.Float32BufferAttribute(vertices, 3));
+                geometry.setAttribute('normal', new THREE.Float32BufferAttribute(normals, 3));
+                geometry.setAttribute('uv', new THREE.Float32BufferAttribute(uvs, 2));
+                geometry.setIndex(indices);
+                
+                return geometry;
+            }
+
+            // Create leaf instances
+            createLeafInstances(leaves, config, t, windTime) {
+                const leafGeometry = this.createLeafGeometry(config.leaf);
+                const leafMaterial = new THREE.MeshStandardMaterial({
+                    color: new THREE.Color(...config.materials.leaf.base_color),
+                    roughness: 0.5,
+                    metalness: 0,
+                    side: THREE.DoubleSide
+                });
+                
+                const instancedMesh = new THREE.InstancedMesh(leafGeometry, leafMaterial, leaves.length);
+                const matrix = new THREE.Matrix4();
+                const position = new THREE.Vector3();
+                const quaternion = new THREE.Quaternion();
+                const scale = new THREE.Vector3();
+                
+                leaves.forEach((leaf, index) => {
+                    position.copy(leaf.position);
+                    
+                    // Apply wind
+                    if (windTime > 0 && config.wind) {
+                        const windOffset = Math.sin(windTime * config.wind.freq * 2 + index) * config.wind.amp;
+                        position.x += windOffset * 0.5;
+                    }
+                    
+                    // Orient leaf
+                    const lookAt = new THREE.Matrix4().lookAt(position, position.clone().add(leaf.normal), new THREE.Vector3(0, 1, 0));
+                    quaternion.setFromRotationMatrix(lookAt);
+                    
+                    // Apply twist
+                    const twist = config.leaf.twist_deg * Math.PI / 180;
+                    quaternion.multiply(new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 0, 1), twist));
+                    
+                    // Scale based on age and unfurl curve
+                    const unfurlCurve = this.applyCurve(config.growth.curves.leaf_unfurl, leaf.age);
+                    scale.set(unfurlCurve, unfurlCurve, unfurlCurve);
+                    
+                    matrix.compose(position, quaternion, scale);
+                    instancedMesh.setMatrixAt(index, matrix);
+                });
+                
+                instancedMesh.instanceMatrix.needsUpdate = true;
+                return instancedMesh;
+            }
+
+            // Create basic leaf geometry
+            createLeafGeometry(leafConfig) {
+                const shape = new THREE.Shape();
+                const length = leafConfig.length;
+                const width = leafConfig.width;
+                
+                switch (leafConfig.shape) {
+                    case "elliptic":
+                        shape.moveTo(0, -length / 2);
+                        shape.quadraticCurveTo(width / 2, -length / 4, width / 2, 0);
+                        shape.quadraticCurveTo(width / 2, length / 4, 0, length / 2);
+                        shape.quadraticCurveTo(-width / 2, length / 4, -width / 2, 0);
+                        shape.quadraticCurveTo(-width / 2, -length / 4, 0, -length / 2);
+                        break;
+                        
+                    case "lanceolate":
+                        shape.moveTo(0, -length / 2);
+                        shape.quadraticCurveTo(width / 3, -length / 3, width / 3, 0);
+                        shape.quadraticCurveTo(width / 3, length / 3, 0, length / 2);
+                        shape.quadraticCurveTo(-width / 3, length / 3, -width / 3, 0);
+                        shape.quadraticCurveTo(-width / 3, -length / 3, 0, -length / 2);
+                        break;
+                        
+                    case "cordate":
+                        shape.moveTo(0, -length / 2);
+                        shape.bezierCurveTo(width / 2, -length / 2, width / 2, -length / 4, width / 2, 0);
+                        shape.quadraticCurveTo(width / 2, length / 3, 0, length / 2);
+                        shape.quadraticCurveTo(-width / 2, length / 3, -width / 2, 0);
+                        shape.bezierCurveTo(-width / 2, -length / 4, -width / 2, -length / 2, 0, -length / 2);
+                        break;
+                        
+                    case "needle":
+                        shape.moveTo(0, -length / 2);
+                        shape.lineTo(width / 2, 0);
+                        shape.lineTo(0, length / 2);
+                        shape.lineTo(-width / 2, 0);
+                        shape.lineTo(0, -length / 2);
+                        break;
+                        
+                    case "pinnate": // For fern fronds
+                        const segments = 20;
+                        shape.moveTo(0, -length / 2);
+                        for (let i = 0; i <= segments; i++) {
+                            const t = i / segments;
+                            const y = -length / 2 + t * length;
+                            const x = Math.sin(t * Math.PI) * width / 2 * (1 - t * 0.7);
+                            if (i % 2 === 0) {
+                                shape.lineTo(x, y);
+                            } else {
+                                shape.lineTo(-x, y);
+                            }
+                        }
+                        break;
+                }
+                
+                const geometry = new THREE.ShapeGeometry(shape);
+                
+                // Add curl by displacing vertices
+                const positions = geometry.attributes.position.array;
+                for (let i = 0; i < positions.length; i += 3) {
+                    const y = positions[i + 1];
+                    const normalizedY = (y + length / 2) / length;
+                    positions[i + 2] += normalizedY * normalizedY * leafConfig.curl * 0.1;
+                }
+                geometry.attributes.position.needsUpdate = true;
+                geometry.computeVertexNormals();
+                
+                return geometry;
+            }
+
+            // Create flower instances
+            createFlowerInstances(flowers, config, t, windTime) {
+                const group = new THREE.Group();
+                
+                flowers.forEach((flower, index) => {
+                    const flowerGroup = new THREE.Group();
+                    flowerGroup.position.copy(flower.position);
+                    
+                    // Apply wind
+                    if (windTime > 0 && config.wind) {
+                        const windOffset = Math.sin(windTime * config.wind.freq * 1.5 + index) * config.wind.amp;
+                        flowerGroup.position.x += windOffset;
+                    }
+                    
+                    // Create petals
+                    const petalCount = config.flower.petal_count;
+                    const openCurve = this.applyCurve(config.growth.curves.flower_open || "ease_in_quart", flower.age);
+                    
+                    for (let i = 0; i < petalCount; i++) {
+                        const angle = (i / petalCount) * Math.PI * 2;
+                        const petal = this.createPetalGeometry(config.flower, openCurve);
+                        const petalMesh = new THREE.Mesh(petal, new THREE.MeshStandardMaterial({
+                            color: new THREE.Color(...config.materials.flower.base_color),
+                            emissive: new THREE.Color(...config.materials.flower.base_color),
+                            emissiveIntensity: config.materials.flower.emission || 0,
+                            side: THREE.DoubleSide
+                        }));
+                        
+                        petalMesh.rotation.y = angle;
+                        petalMesh.rotation.z = (1 - openCurve) * Math.PI / 4;
+                        flowerGroup.add(petalMesh);
+                    }
+                    
+                    // Add center (disk florets for composite flowers)
+                    if (config.flower.inflorescence === "head") {
+                        const centerGeometry = new THREE.SphereGeometry(config.flower.corolla_radius * 0.8, 16, 16);
+                        const centerMaterial = new THREE.MeshStandardMaterial({
+                            color: new THREE.Color(0.2, 0.15, 0.05),
+                            roughness: 0.9
+                        });
+                        const center = new THREE.Mesh(centerGeometry, centerMaterial);
+                        flowerGroup.add(center);
+                    }
+                    
+                    group.add(flowerGroup);
+                });
+                
+                return group;
+            }
+
+            // Create petal geometry
+            createPetalGeometry(flowerConfig, openAmount) {
+                const shape = new THREE.Shape();
+                const length = flowerConfig.petal_length;
+                const width = length * 0.4;
+                
+                // Basic petal shape
+                shape.moveTo(0, 0);
+                shape.quadraticCurveTo(width / 2, length / 3, width / 3, length * 0.8);
+                shape.quadraticCurveTo(width / 4, length * 0.9, 0, length);
+                shape.quadraticCurveTo(-width / 4, length * 0.9, -width / 3, length * 0.8);
+                shape.quadraticCurveTo(-width / 2, length / 3, 0, 0);
+                
+                const geometry = new THREE.ShapeGeometry(shape);
+                
+                // Curve the petal
+                const positions = geometry.attributes.position.array;
+                for (let i = 0; i < positions.length; i += 3) {
+                    const y = positions[i + 1];
+                    const normalizedY = y / length;
+                    positions[i + 2] += normalizedY * normalizedY * 0.02 * openAmount;
+                }
+                geometry.attributes.position.needsUpdate = true;
+                geometry.computeVertexNormals();
+                
+                return geometry;
+            }
+        }
+
+        // Scene setup
+        const scene = new THREE.Scene();
+        scene.background = new THREE.Color(0x87CEEB); // Sky blue
+        scene.fog = new THREE.Fog(0x87CEEB, 10, 50);
+
+        // Camera
+        const camera = new THREE.PerspectiveCamera(
+            75,
+            window.innerWidth / window.innerHeight,
+            0.1,
+            100
+        );
+        camera.position.set(3, 2, 5);
+
+        // Renderer
+        const renderer = new THREE.WebGLRenderer({
+            canvas: document.getElementById('canvas'),
+            antialias: true
+        });
+        renderer.setSize(window.innerWidth, window.innerHeight);
+        renderer.setPixelRatio(window.devicePixelRatio);
+        renderer.shadowMap.enabled = true;
+        renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+
+        // Controls
+        const controls = new OrbitControls(camera, renderer.domElement);
+        controls.enableDamping = true;
+        controls.dampingFactor = 0.05;
+        controls.target.set(0, 1, 0);
+
+        // Lighting
+        const ambientLight = new THREE.AmbientLight(0xffffff, 0.6);
+        scene.add(ambientLight);
+
+        const directionalLight = new THREE.DirectionalLight(0xffffff, 0.8);
+        directionalLight.position.set(5, 10, 5);
+        directionalLight.castShadow = true;
+        directionalLight.shadow.camera.left = -10;
+        directionalLight.shadow.camera.right = 10;
+        directionalLight.shadow.camera.top = 10;
+        directionalLight.shadow.camera.bottom = -10;
+        directionalLight.shadow.mapSize.width = 2048;
+        directionalLight.shadow.mapSize.height = 2048;
+        scene.add(directionalLight);
+
+        // Ground
+        const groundGeometry = new THREE.PlaneGeometry(20, 20);
+        const groundMaterial = new THREE.MeshStandardMaterial({ 
+            color: 0x3a5f3a,
+            roughness: 0.8,
+            metalness: 0.2
+        });
+        const ground = new THREE.Mesh(groundGeometry, groundMaterial);
+        ground.rotation.x = -Math.PI / 2;
+        ground.receiveShadow = true;
+        scene.add(ground);
+
+        // FloraGraph instance
+        const floraGraph = new FloraGraph();
+        let currentPlant = null;
+        let currentConfig = null;
+        let growthTime = 0;
+        let animationSpeed = 1;
+        let windStrength = 0.5;
+        let isPlaying = false;
+        let startTime = Date.now();
+
+        // UI Elements
+        const plantTypeSelect = document.getElementById('plantType');
+        const timeSlider = document.getElementById('timeSlider');
+        const timeValue = document.getElementById('timeValue');
+        const speedSlider = document.getElementById('speedSlider');
+        const speedValue = document.getElementById('speedValue');
+        const windSlider = document.getElementById('windSlider');
+        const windValue = document.getElementById('windValue');
+        const generateBtn = document.getElementById('generateBtn');
+        const playBtn = document.getElementById('playBtn');
+        const configDisplay = document.getElementById('configDisplay');
+        const stats = document.getElementById('stats');
+
+        // Generate plant
+        function generatePlant() {
+            const plantType = plantTypeSelect.value;
+            currentConfig = JSON.parse(JSON.stringify(floraGraph.configs[plantType]));
+            
+            // Add some randomness to seed
+            currentConfig.seed = Math.floor(Math.random() * 10000);
+            
+            // Remove old plant
+            if (currentPlant) {
+                scene.remove(currentPlant);
+                currentPlant.traverse((child) => {
+                    if (child.geometry) child.geometry.dispose();
+                    if (child.material) child.material.dispose();
+                });
+            }
+            
+            // Update time based on current slider
+            growthTime = timeSlider.value / 100;
+            updatePlant();
+            
+            // Update config display
+            configDisplay.textContent = JSON.stringify(currentConfig, null, 2);
+        }
+
+        // Update plant with current time
+        function updatePlant() {
+            if (!currentConfig) return;
+            
+            // Remove old plant
+            if (currentPlant) {
+                scene.remove(currentPlant);
+                currentPlant.traverse((child) => {
+                    if (child.geometry) child.geometry.dispose();
+                    if (child.material) child.material.dispose();
+                });
+            }
+            
+            // Generate new plant graph
+            const graph = floraGraph.grow(currentConfig, growthTime);
+            
+            // Apply wind
+            const windTime = (Date.now() - startTime) / 1000 * windStrength;
+            currentConfig.wind.amp *= windStrength;
+            
+            // Compile geometry
+            currentPlant = floraGraph.compileGeometry(graph, currentConfig, growthTime, windTime);
+            currentPlant.castShadow = true;
+            currentPlant.receiveShadow = true;
+            
+            // Enable shadows for all meshes
+            currentPlant.traverse((child) => {
+                if (child.isMesh) {
+                    child.castShadow = true;
+                    child.receiveShadow = true;
+                }
+            });
+            
+            scene.add(currentPlant);
+            
+            // Update stats
+            let vertexCount = 0;
+            let meshCount = 0;
+            currentPlant.traverse((child) => {
+                if (child.isMesh) {
+                    meshCount++;
+                    if (child.geometry.attributes.position) {
+                        vertexCount += child.geometry.attributes.position.count;
+                    }
+                }
+            });
+            stats.textContent = `Vertices: ${vertexCount.toLocaleString()} | Meshes: ${meshCount}`;
+        }
+
+        // Event listeners
+        generateBtn.addEventListener('click', generatePlant);
+        
+        playBtn.addEventListener('click', () => {
+            isPlaying = !isPlaying;
+            playBtn.textContent = isPlaying ? 'Pause Animation' : 'Play Growth Animation';
+            if (isPlaying) {
+                growthTime = 0;
+                timeSlider.value = 0;
+            }
+        });
+        
+        timeSlider.addEventListener('input', (e) => {
+            growthTime = e.target.value / 100;
+            timeValue.textContent = growthTime.toFixed(2);
+            updatePlant();
+        });
+        
+        speedSlider.addEventListener('input', (e) => {
+            animationSpeed = e.target.value / 100;
+            speedValue.textContent = animationSpeed.toFixed(1) + 'x';
+        });
+        
+        windSlider.addEventListener('input', (e) => {
+            windStrength = e.target.value / 100;
+            windValue.textContent = windStrength.toFixed(1);
+        });
+
+        // Window resize
+        window.addEventListener('resize', () => {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+        });
+
+        // Animation loop
+        function animate() {
+            requestAnimationFrame(animate);
+            
+            // Update controls
+            controls.update();
+            
+            // Auto-play growth animation
+            if (isPlaying && currentConfig) {
+                growthTime += 0.002 * animationSpeed;
+                if (growthTime > 1) {
+                    growthTime = 1;
+                    isPlaying = false;
+                    playBtn.textContent = 'Play Growth Animation';
+                }
+                timeSlider.value = growthTime * 100;
+                timeValue.textContent = growthTime.toFixed(2);
+                updatePlant();
+            } else if (currentPlant && windStrength > 0) {
+                // Just update wind when not playing growth
+                updatePlant();
+            }
+            
+            // Render
+            renderer.render(scene, camera);
+        }
+
+        // Initialize with a tree
+        generatePlant();
+        animate();
+    </script>
+</body>
+</html>
